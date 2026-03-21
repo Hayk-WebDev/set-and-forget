@@ -2,21 +2,21 @@
   "name": "Set and Forget",
   "short_name": "Set & Forget",
   "description": "Forex trading checklist and journal",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "/set-and-forget/",
+  "scope": "/set-and-forget/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0a0d12",
   "theme_color": "#0a0d12",
   "icons": [
     {
-      "src": "/img/icon-192.png",
+      "src": "/set-and-forget/img/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/img/icon-512.png",
+      "src": "/set-and-forget/img/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
