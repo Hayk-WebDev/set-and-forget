@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Set and Forget</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0d12">
+  <link rel="manifest" href="/manifest.json">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+<div id="app" class="container py-4">
+
+  <!-- HEADER -->
+  <div class="app-header">
+    <div class="header-bg"></div>
+    <div class="header-overlay"></div>
+    <div class="header-content">
+      <div class="d-flex justify-content-between align-items-start">
+        <h3 class="title mb-0"> {{ selectedPair }}</h3>
+        <button class="btn btn-sm" style="border:1px solid" @click="resetPairData"><b>Reset</b></button>
+      </div>
+      <div class="pair-selector mt-3">
+        <button v-for="pair in pairs" :key="pair"
+                class="pair-btn" :class="{ active: selectedPair === pair }"
+                @click="selectPair(pair)">
+          <div class="pair-icons">
+            <img class="pair-icon base"  :src="getMeta(pair).baseFlag"  :alt="getMeta(pair).base"  loading="lazy"/>
+            <img class="pair-icon quote" :src="getMeta(pair).quoteFlag" :alt="getMeta(pair).quote" loading="lazy"/>
+          </div>
+          {{ pair }}
+        </button>
+      </div>
+      <div class="session-status mt-3" style="justify-content: space-between;">
+        <div class="d-flex align-items-center gap-2">
+          <template v-if="activeSessions.length">
+            <span class="session-dot live" :style="{ color: activeSessions[0].color, background: activeSessions[0].color }"></span>
+            <span class="session-text">
+              {{ activeSessions.map(s => s.name).join(' · ') }}
+              <span class="session-sub">· LIVE</span>
+            </span>
+          </template>
+        </div>
+        <div><img v-if="activeSessions.length" :src="`img/${activeSessions[0].icon}`"/></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bull / Bear -->
+  <div class="text-center mb-4 trend-toggle">
+    <span :class="{active: trendMode==='bull'}" style="color:green" @click="setTrend('bull')"> Bull</span>
+    &nbsp;&nbsp;&nbsp;
+    <span :class="{active: trendMode==='bear'}" style="color:red"  @click="setTrend('bear')"> Bear</span>
+  </div>
+  <div class="container">
+    <div class="row justify-content-center">
+      <img :src="trendImage" class="circle-img" alt="" :style="{ boxShadow: trendShadow }">
+    </div>
+  </div>
+
+  <!-- GLOBAL TREND -->
+  <div class="card card-dark p-4 mb-4" :class="trendModeClass">
+    <h5 class="text-center mb-3">📈 Global Trend</h5>
+    <div class="row">
+      <div class="col-12 col-md-4 mb-2 text-center" v-for="trend in trends" :key="trend.name">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" :id="'trend_'+trend.name" v-model="trend.checked" @change="debouncedSave">
+          <label class="form-check-label" :for="'trend_'+trend.name">{{ trend.name }} ({{ trend.value }}%)</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHECKLIST -->
+  <div class="card card-dark p-4 mb-4" :class="trendModeClass">
+    <h5 class="text-center mb-4">📝 Checklist</h5>
+    <div class="row">
+      <div class="col-12 col-lg-4 mb-4 timeframe-column" v-for="tf in timeframes" :key="tf.name">
+        <h6 class="text-info text-center mb-3">⏳ {{ tf.name }}</h6>
+        <div v-for="item in tf.items" :key="item.name" class="form-check mb-2">
+          <input class="form-check-input" type="checkbox"
+                 :id="tf.name+'_'+item.name" v-model="item.checked"
+                 :disabled="(item.name==='AOI' && isAOIDisabled(tf.name)) || (item.name==='Round psych level' && isPoinDisabled(tf.name))"
+                 @change="debouncedSave">
+          <label class="form-check-label" :for="tf.name+'_'+item.name">{{ item.name }} ({{ item.value }}%)</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ENTRY CHECKLIST -->
+  <div class="card card-dark p-4 mb-4" :class="trendModeClass">
+    <h5 class="text-center mb-3">🎯 ENTRY Checklist</h5>
+    <div v-for="entry in entryChecklist" :key="entry.name" class="form-check mb-2">
+      <input class="form-check-input" type="checkbox" :id="'entry_'+entry.name" v-model="entry.checked" @change="debouncedSave">
+      <label class="form-check-label" :for="'entry_'+entry.name">{{ entry.name }} ({{ entry.value }}%)</label>
+    </div>
+  </div>
+
+  <!-- SCORE -->
+  <div class="score-section mb-4">
+    <div class="score-gauge">
+      <svg class="score-ring" viewBox="0 0 160 160">
+        <circle class="score-ring-bg" cx="80" cy="80" r="68" />
+        <circle class="score-ring-fill" cx="80" cy="80" r="68"
+                :style="{ strokeDashoffset: ringOffset, stroke: scoreColor }" />
+      </svg>
+      <div class="score-value">
+        <span class="score-number">{{ totalScore }}</span>
+        <span class="score-percent">%</span>
+      </div>
+      <div class="score-glow" :style="{ background: scoreColor }"></div>
+    </div>
+    <div class="score-label" :style="{ color: scoreColor }">{{ scoreLabel }}</div>
+    <div class="score-bar-track">
+      <div class="score-bar-fill" :style="{ width: totalScore + '%', background: scoreGradient }"></div>
+      <div class="score-bar-shine"></div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════
+       TRADER JOURNAL FAB
+  ════════════════════════════════════ -->
+  <button class="tj-fab" @click="tjOpen = true; tjLoadMonth()" title="Trader Journal">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h2v2H7v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm-8 4h2v2H7v-2zm4 0h2v2h-2v-2z"/>
+    </svg>
+  </button>
+
+  <!-- ── Journal slide-up panel ── -->
+  <div class="tj-overlay" :class="{ open: tjOpen }" @click.self="tjOpen = false">
+    <div class="tj-panel">
+
+      <div class="tj-header">
+        <div class="tj-drag"></div>
+        <div class="tj-header-row">
+          <span class="tj-title">📓 Trader Journal</span>
+          <button class="tj-close" @click="tjOpen = false">✕</button>
+        </div>
+      </div>
+
+      <!-- Month navigation -->
+      <div class="tj-month-nav">
+        <button class="tj-nav-btn" @click="tjPrevMonth">‹</button>
+        <span class="tj-month-lbl">{{ tjMonthLabel }}</span>
+        <button class="tj-nav-btn" @click="tjNextMonth">›</button>
+        <span class="tj-pnl" :class="tjPnlClass">{{ tjPnlText }}</span>
+      </div>
+
+      <!-- Calendar grid -->
+      <div class="tj-cal">
+        <div class="tj-weekdays">
+          <div class="tj-wd" v-for="(d, i) in ['S','M','T','W','T','F','S']" :key="i">{{ d }}</div>
+        </div>
+        <div class="tj-grid">
+          <!-- empty leading cells -->
+          <div class="tj-day empty" v-for="n in tjFirstDay" :key="'e'+n"></div>
+          <!-- day cells -->
+          <div class="tj-day"
+               v-for="d in tjDaysInMonth" :key="d"
+               :class="tjDayClass(d)"
+               @click="tjOpenEntry(d)">
+            <span class="tj-dnum">{{ d }}</span>
+            <span v-if="tjDayData[d]" class="tj-dpnl" :class="tjDayData[d].amount >= 0 ? 'pos' : 'neg'">
+              {{ tjFormatDayPnl[d] }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats bar -->
+      <div class="tj-stats">
+        <div class="tj-stat">
+          <div class="tj-stat-lbl">Trading Days</div>
+          <div class="tj-stat-val neu">{{ tjStats.days }}</div>
+        </div>
+        <div class="tj-stat">
+          <div class="tj-stat-lbl">Win Rate</div>
+          <div class="tj-stat-val" :class="tjStats.winRate >= 50 ? 'pos' : (tjStats.days > 0 ? 'neg' : 'neu')">
+            {{ tjStats.days > 0 ? tjStats.winRate + '%' : '—' }}
+          </div>
+        </div>
+        <div class="tj-stat">
+          <div class="tj-stat-lbl">Best Day</div>
+          <div class="tj-stat-val pos">{{ tjStats.best > 0 ? '$' + (tjStats.best % 1 === 0 ? tjStats.best : tjStats.best.toFixed(2)) : '—' }}</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Day entry modal ── -->
+  <div class="tj-entry-ov" :class="{ open: tjEntryOpen }" @click.self="tjEntryOpen = false">
+    <div class="tj-entry-card">
+      <div class="tj-entry-date">{{ tjEntryDateLabel }}</div>
+      <div class="tj-entry-title" v-once>Log Trading Day</div>
+
+      <div class="tj-ig">
+        <label class="tj-il">P&amp;L Amount</label>
+        <div class="tj-amount-wrap">
+          <span class="tj-sign-hint">$</span>
+          <input class="tj-amount"
+                 :class="tjEntryAmount > 0 ? 'is-pos' : (tjEntryAmount < 0 ? 'is-neg' : '')"
+                 type="number"
+                 v-model.number="tjEntryAmount"
+                 placeholder="e.g. 150 or -75"
+                 step="0.01"
+                 ref="amountRef">
+        </div>
+        <div class="tj-hint-txt">Positive = profit &nbsp;·&nbsp; Negative = loss</div>
+      </div>
+
+      <div class="tj-ig">
+        <label class="tj-il">Notes (optional)</label>
+        <textarea class="tj-note" v-model="tjEntryNote" placeholder="Setup, mistakes, key lessons..."></textarea>
+      </div>
+
+      <div class="tj-actions">
+        <button class="tj-btn-cancel" @click="tjEntryOpen = false">Cancel</button>
+        <button v-if="tjDayData[tjSelectedDay]" class="tj-btn-del" @click="tjDeleteEntry" title="Delete">🗑</button>
+        <button class="tj-btn-save" @click="tjSaveEntry">Save</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end #app -->
+
+<script>
+const { createApp, nextTick } = Vue
+
+const currencyMeta = {
+  EUR: { flag: 'https://flagcdn.com/w40/eu.png' },
+  USD: { flag: 'https://flagcdn.com/w40/us.png' },
+  JPY: { flag: 'https://flagcdn.com/w40/jp.png' },
+  CAD: { flag: 'https://flagcdn.com/w40/ca.png' },
+  CHF: { flag: 'https://flagcdn.com/w40/ch.png' },
+  GBP: { flag: 'https://flagcdn.com/w40/gb.png' },
+  AUD: { flag: 'https://flagcdn.com/w40/au.png' },
+  BTC: { flag: 'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/btc.png' },
+  XAU: { flag: 'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/gold.png' },
+}
+
+const sessions = [
+  { name: 'Sydney',   color: '#fbbf24', openUTC: 22, closeUTC: 7,  icon: 'building.png' },
+  { name: 'Tokyo',    color: '#f87171', openUTC: 0,  closeUTC: 9,  icon: 'torii-gate.png' },
+  { name: 'London',   color: '#60a5fa', openUTC: 8,  closeUTC: 17, icon: 'subway.png' },
+  { name: 'New York', color: '#c084fc', openUTC: 13, closeUTC: 22, icon: 'statue-of-liberty.png' },
+]
+
+function freshData() {
+  return {
+    trends: [
+      { name: "Weekly", value: 10, checked: false },
+      { name: "Daily",  value: 10, checked: false },
+      { name: "4Hour",  value: 10, checked: false }
+    ],
+    timeframes: [
+      { name: "Weekly", items: [
+        { name: "AOI",                      value: 10, checked: false },
+        { name: "EMA",                      value: 5,  checked: false },
+        { name: "Previous Structure Point", value: 10, checked: false },
+        { name: "Candlestick",              value: 10, checked: false },
+        { name: "Pattern",                  value: 10, checked: false },
+        { name: "Round psych level",        value: 5,  checked: false }
+      ]},
+      { name: "Daily", items: [
+        { name: "AOI",                      value: 10, checked: false },
+        { name: "EMA",                      value: 5,  checked: false },
+        { name: "Previous Structure Point", value: 10, checked: false },
+        { name: "Candlestick",              value: 10, checked: false },
+        { name: "Pattern",                  value: 10, checked: false },
+        { name: "Round psych level",        value: 5,  checked: false }
+      ]},
+      { name: "4Hour", items: [
+        { name: "EMA",                      value: 5,  checked: false },
+        { name: "Previous Structure Point", value: 10, checked: false },
+        { name: "Candlestick",              value: 10, checked: false },
+        { name: "Pattern",                  value: 10, checked: false },
+        { name: "Round psych level",        value: 5,  checked: false }
+      ]}
+    ],
+    entryChecklist: [
+      { name: "SOS",                   value: 10, checked: false },
+      { name: "Candlestick Engulfing", value: 10, checked: false },
+      { name: "Pattern",               value: 10, checked: false }
+    ],
+    trendMode: 'bull'
+  }
+}
+
+const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+
+// debounce — prevents thrashing localStorage on rapid checkbox taps
+function debounce(fn, ms) {
+  let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms) }
+}
+
+// cache pair metadata — getMeta was rebuilding objects on every render
+const _metaCache = {}
+function getMetaCached(pair) {
+  if (_metaCache[pair]) return _metaCache[pair]
+  const [base, quote] = pair.split('/')
+  _metaCache[pair] = { base, quote, baseFlag: currencyMeta[base]?.flag, quoteFlag: currencyMeta[quote]?.flag }
+  return _metaCache[pair]
+}
+
+createApp({
+  data() {
+    const today = new Date()
+    return {
+      // ── existing ──
+      pairs: ["EUR/USD","USD/JPY","USD/CAD","USD/CHF","BTC/USD","XAU/USD"],
+      selectedPair: "EUR/USD",
+      sessions,
+      now: new Date(),
+      ...freshData(),
+
+      // ── journal ──
+      tjOpen:        false,
+      tjEntryOpen:   false,
+      tjYear:        today.getFullYear(),
+      tjMonth:       today.getMonth(),
+      tjSelectedDay: null,
+      tjEntryAmount: '',
+      tjEntryNote:   '',
+      tjDayData:     {},
+      tjToday:       today,  // cached Date — Vue3 silently drops properties starting with _
+    }
+  },
+
+  computed: {
+    /* ── existing computed ── */
+    activeSessions() { return this.sessions.filter(s => this.isLive(s)) },
+    totalScore() {
+      let t = 0
+      this.trends.forEach(x => { if (x.checked) t += x.value })
+      this.timeframes.forEach(tf => tf.items.forEach(i => { if (i.checked) t += i.value }))
+      this.entryChecklist.forEach(e => { if (e.checked) t += e.value })
+      return Math.min(t, 100)
+    },
+    ringOffset() {
+      const c = 2 * Math.PI * 68
+      return c - (this.totalScore / 100) * c
+    },
+    scoreColor() {
+      const s = this.totalScore
+      if (s < 25)  return '#ef4444'
+      if (s < 50)  return '#f59e0b'
+      if (s < 75)  return '#38bdf8'
+      if (s === 100) return '#f50bf4'
+      return '#22c55e'
+    },
+    scoreGradient() { return `linear-gradient(90deg, ${this.scoreColor}44, ${this.scoreColor})` },
+    scoreLabel() {
+      const s = this.totalScore
+      if (s === 0)  return 'No Trade'
+      if (s < 25)   return 'Stay Out'
+      if (s < 50)   return 'Wait & Watch'
+      if (s < 75)   return 'Getting Ready'
+      if (s < 100)  return 'Locked & Loaded'
+      return 'Sniper Shot!'
+    },
+    trendModeClass() { return this.trendMode === 'bull' ? 'trend-bull' : 'trend-bear' },
+    trendImage()     { return this.trendMode === 'bull' ? 'img/bull.jpg' : 'img/bear.jpg' },
+    trendShadow()    { return this.trendMode === 'bull' ? '0px 1px 20px 20px rgba(0,200,0,0.3)' : '0px 1px 20px 20px rgba(255,0,0,0.3)' },
+
+    /* ── journal computed ── */
+    tjMonthLabel() { return `${MONTHS[this.tjMonth]} ${this.tjYear}` },
+    tjFirstDay()   { return new Date(this.tjYear, this.tjMonth, 1).getDay() },
+    tjDaysInMonth(){ return new Date(this.tjYear, this.tjMonth + 1, 0).getDate() },
+
+    // single pass over tjDayData — was 4 separate Object.values() loops before
+    tjStats() {
+      const entries = Object.values(this.tjDayData)
+      if (!entries.length) return { total: 0, days: 0, winRate: 0, best: 0 }
+      let total = 0, wins = 0, best = 0
+      for (const e of entries) {
+        const a = parseFloat(e.amount) || 0
+        total += a
+        if (a > 0) { wins++; if (a > best) best = a }
+      }
+      return {
+        total,
+        days: entries.length,
+        winRate: Math.round((wins / entries.length) * 100),
+        best
+      }
+    },
+    tjPnlClass() {
+      if (!this.tjStats.days) return 'neu'
+      return this.tjStats.total >= 0 ? 'pos' : 'neg'
+    },
+    tjPnlText() {
+      if (!this.tjStats.days) return 'PnL: —'
+      const t = this.tjStats.total
+      return `PnL: ${t >= 0 ? '+' : ''}$${t.toFixed(2)}`
+    },
+    tjEntryDateLabel() {
+      if (!this.tjSelectedDay) return ''
+      const d = new Date(this.tjYear, this.tjMonth, this.tjSelectedDay)
+      return `${DAYS_SHORT[d.getDay()]}, ${MONTHS[this.tjMonth].toUpperCase()} ${this.tjSelectedDay}`
+    },
+    // format PnL for every day cell in one pass — avoids inline Math.abs per cell in template
+    tjFormatDayPnl() {
+      const out = {}
+      for (const [d, e] of Object.entries(this.tjDayData)) {
+        const a = parseFloat(e.amount) || 0
+        const abs = Math.abs(a)
+        out[d] = `${a >= 0 ? '+' : '-'}$${abs % 1 === 0 ? abs : abs.toFixed(2)}`
+      }
+      return out
+    },
+    tjIsCurrentMonth() {
+      return this.tjYear === this.tjToday.getFullYear() && this.tjMonth === this.tjToday.getMonth()
+    },
+    tjTodayDate() {
+      return this.tjToday.getDate()
+    },
+    tjDayClassMap() {
+      const map = {}
+      const isCurrentMonth  = this.tjIsCurrentMonth
+      const todayDate       = this.tjTodayDate
+      const isWholelyFuture = !isCurrentMonth && (
+        this.tjYear > this.tjToday.getFullYear() ||
+        (this.tjYear === this.tjToday.getFullYear() && this.tjMonth > this.tjToday.getMonth())
+      )
+      for (let d = 1; d <= this.tjDaysInMonth; d++) {
+        const classes = []
+        if (isCurrentMonth && d === todayDate) classes.push('today')
+        if (isCurrentMonth ? d > todayDate : isWholelyFuture) classes.push('future')
+        const entry = this.tjDayData[d]
+        if (entry) classes.push(parseFloat(entry.amount) >= 0 ? 'has-pos' : 'has-neg')
+        map[d] = classes
+      }
+      return map
+    },
+  },
+
+  methods: {
+    /* ── existing methods ── */
+    isLive(s) {
+      const h = this.now.getUTCHours() + this.now.getUTCMinutes() / 60
+      const { openUTC: o, closeUTC: c } = s
+      return o < c ? h >= o && h < c : h >= o || h < c
+    },
+    getMeta(pair)    { return getMetaCached(pair) },
+    selectPair(pair) { this.selectedPair = pair; this.loadPairData() },
+    setTrend(mode)   { this.trendMode = mode; this.debouncedSave() },
+    isAOIDisabled(n) {
+      if (n === "Weekly") return this.isAOIChecked("Daily")
+      if (n === "Daily")  return this.isAOIChecked("Weekly")
+      return false
+    },
+    isPoinDisabled(n) {
+      // any OTHER timeframe already has Round psych level checked → disable this one
+      return this.timeframes.some(t => t.name !== n && t.items.find(i => i.name === 'Round psych level')?.checked)
+    },
+    isAOIChecked(n)  { return this.timeframes.find(t => t.name === n)?.items.find(i => i.name === 'AOI')?.checked ?? false },
+    savePairData() {
+      localStorage.setItem('pair_' + this.selectedPair, JSON.stringify({
+        trends: this.trends, timeframes: this.timeframes,
+        entryChecklist: this.entryChecklist, trendMode: this.trendMode
+      }))
+    },
+    loadPairData() {
+      const d = JSON.parse(localStorage.getItem('pair_' + this.selectedPair))
+      if (d) {
+        this.trends = d.trends; this.timeframes = d.timeframes
+        this.entryChecklist = d.entryChecklist; this.trendMode = d.trendMode || 'bull'
+      } else {
+        Object.assign(this, freshData())
+      }
+    },
+    resetPairData() {
+      localStorage.removeItem('pair_' + this.selectedPair)
+      Object.assign(this, freshData())
+    },
+
+    /* ── journal methods ── */
+    tjKey(day) {
+      return `tj_${this.tjYear}_${String(this.tjMonth+1).padStart(2,'0')}_${String(day).padStart(2,'0')}`
+    },
+    tjLoadMonth() {
+      const map = {}
+      for (let d = 1; d <= 31; d++) {
+        const raw = localStorage.getItem(this.tjKey(d))
+        if (raw) { try { map[d] = JSON.parse(raw) } catch(e){} }
+      }
+      this.tjDayData = map
+    },
+    tjPrevMonth() {
+      if (this.tjMonth === 0) { this.tjMonth = 11; this.tjYear-- }
+      else this.tjMonth--
+      this.tjLoadMonth()
+    },
+    tjNextMonth() {
+      if (this.tjMonth === 11) { this.tjMonth = 0; this.tjYear++ }
+      else this.tjMonth++
+      this.tjLoadMonth()
+    },
+    // just read from the pre-computed map — O(1) per cell
+    tjDayClass(d) { return this.tjDayClassMap[d] || [] },
+    tjOpenEntry(d) {
+      const isFuture = this.tjIsCurrentMonth
+        ? d > this.tjTodayDate
+        : (this.tjYear > this.tjToday.getFullYear() || (this.tjYear === this.tjToday.getFullYear() && this.tjMonth > this.tjToday.getMonth()))
+      if (isFuture) return
+
+      this.tjSelectedDay = d
+      const existing = this.tjDayData[d]
+      if (existing) {
+        this.tjEntryAmount = existing.amount
+        this.tjEntryNote   = existing.note || ''
+      } else {
+        this.tjEntryAmount = ''
+        this.tjEntryNote   = ''
+      }
+      this.tjEntryOpen = true
+      nextTick(() => { this.$refs.amountRef?.focus() })
+    },
+    tjSaveEntry() {
+      const amt = parseFloat(this.tjEntryAmount)
+      if (isNaN(amt)) {
+        this.$refs.amountRef?.classList.add('is-neg')
+        setTimeout(() => this.$refs.amountRef?.classList.remove('is-neg'), 700)
+        return
+      }
+      // blur first → keyboard closes → then modal closes (no white flash)
+      this.$refs.amountRef?.blur()
+      const entry = { amount: amt, note: this.tjEntryNote.trim() }
+      localStorage.setItem(this.tjKey(this.tjSelectedDay), JSON.stringify(entry))
+      this.tjDayData = { ...this.tjDayData, [this.tjSelectedDay]: entry }
+      setTimeout(() => { this.tjEntryOpen = false }, 80)
+    },
+    tjDeleteEntry() {
+      localStorage.removeItem(this.tjKey(this.tjSelectedDay))
+      // remove key from reactive map
+      const updated = { ...this.tjDayData }
+      delete updated[this.tjSelectedDay]
+      this.tjDayData = updated
+      this.tjEntryOpen = false
+    }
+  },
+
+  mounted() {
+    this.loadPairData()
+    this.debouncedSave = debounce(() => this.savePairData(), 300)
+
+    setInterval(() => { this.now = new Date() }, 30000)
+
+    // refresh tjToday at midnight so "today" highlight stays correct if app is left open
+    const msUntilMidnight = () => {
+      const n = new Date(), m = new Date(n)
+      m.setHours(24, 0, 0, 0)
+      return m - n
+    }
+    const scheduleMidnight = () => {
+      setTimeout(() => { this.tjToday = new Date(); scheduleMidnight() }, msUntilMidnight())
+    }
+    scheduleMidnight()
+  }
+}).mount("#app")
+</script>
+</body>
+</html>
